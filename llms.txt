@@ -1,0 +1,32 @@
+# AtoA Customs & Tariff Gateway - AI Agent Specification
+> Deterministic HS6/TARIC customs nomenclature resolution and duty classification engine.
+
+## Operational Gateway
+- Base URL: https://customs.une.education
+- OpenAPI 3.1 Spec: https://customs.une.education/openapi.json
+- MCP Endpoint: https://customs.une.education/mcp.php
+- Node: customs.une.education (Unified Norms Engine - Node 04)
+
+## Endpoints
+
+### 1. Health & Metrics
+- GET /api.php?endpoint=ping
+  Returns gateway status, latency, and indexed TARIC provisions count.
+
+### 2. Full-Text Search (FTS5 BM25)
+- GET /api.php?endpoint=v1/search
+  Sub-5ms deterministic keyword search over official French and English EU customs descriptions.
+  Parameters:
+    - q: Query string (e.g. "lithium batteries", "moteur électrique", "pales éoliennes") (mandatory)
+    - limit: Result count (1-50, default 10)
+
+### 3. Hierarchical Code Resolution (Pivot SH6)
+- GET /api.php?endpoint=v1/resolve
+  Resolves commodity code trees between 6-digit Harmonized System (HS6 - universal China/EU pivot), 8-digit Combined Nomenclature (NC8), and 10-digit TARIC codes.
+  Parameters:
+    - code: Numeric prefix or exact code (e.g. "850440", "84129060", "28419040") (mandatory)
+
+## System Details
+- Coverage: Full European Union TARIC & Combined Nomenclature (25,800+ statutory nodes).
+- Pivot System: Universal 6-digit Harmonized System (WCO HS 2022/2026) bridging Chinese GACC export codes and EU customs clearance.
+- Architecture: Zero-hallucination SQLite FTS5 engine, stateless deterministic execution.

@@ -1,0 +1,4 @@
+taric.sqlite*
+data/
+*.log
+.DS_Store

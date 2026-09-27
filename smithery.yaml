@@ -1,0 +1,4 @@
+startCommand:
+  type: http
+  config:
+    url: "https://customs.une.education/mcp.php"
