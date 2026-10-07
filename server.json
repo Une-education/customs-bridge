@@ -1,18 +1,18 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.Une-education/customs-bridge",
-  "title": "CustomsBridge TARIC Engine",
-  "description": "Deterministic HS6/TARIC customs resolution engine and bilingual FTS5 nomenclature API (UNE Node 04).",
-  "version": "1.0.0",
-  "websiteUrl": "https://customs.une.education",
-  "repository": {
-    "url": "https://github.com/Une-education/customs-bridge.git",
-    "source": "github"
-  },
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://customs.une.education/mcp.php"
-    }
-  ]
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+    "name": "io.github.Une-education/customs-bridge",
+    "title": "CustomsBridge TARIC Engine",
+    "description": "Deterministic HS6/TARIC customs resolution engine and official EU duty/VAT calculator (UNE Node 03).",
+    "version": "1.0.0",
+    "websiteUrl": "https://customs.une.education",
+    "repository": {
+        "url": "https://github.com/Une-education/customs-bridge.git",
+        "source": "github"
+    },
+    "remotes": [
+        {
+            "type": "streamable-http",
+            "url": "https://customs.une.education/mcp.php"
+        }
+    ]
 }
