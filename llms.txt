@@ -30,3 +30,4 @@
 - Coverage: Full European Union TARIC & Combined Nomenclature (25,800+ statutory nodes).
 - Pivot System: Universal 6-digit Harmonized System (WCO HS 2022/2026) bridging Chinese GACC export codes and EU customs clearance.
 - Architecture: Zero-hallucination SQLite FTS5 engine, stateless deterministic execution.
+- calculate_customs_duties: Computes official EU customs duty (TDC/MFN) and French import VAT (20%) for any HS code and CIF value in EUR.

@@ -1,67 +1,121 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "AtoA Customs & TARIC Resolution Gateway",
-    "description": "High-performance deterministic gateway for HS6, NC8, and TARIC 10-digit customs classification. Designed for autonomous procurement, freight forwarding, and cross-border trade agents.",
-    "version": "1.0.0"
-  },
-  "servers": [
-    {
-      "url": "https://customs.une.education",
-      "description": "Production Edge Hub"
-    }
-  ],
-  "paths": {
-    "/api.php?endpoint=ping": {
-      "get": {
-        "summary": "Health check & Index Status",
-        "description": "Returns status, latency and total active TARIC codes.",
-        "responses": {
-          "200": { "description": "Gateway operational" }
-        }
-      }
+    "openapi": "3.1.0",
+    "info": {
+        "title": "AtoA Customs & TARIC Resolution Gateway",
+        "description": "High-performance deterministic gateway for HS6, NC8, and TARIC 10-digit customs classification. Designed for autonomous procurement, freight forwarding, and cross-border trade agents.",
+        "version": "1.0.0"
     },
-    "/api.php?endpoint=v1/search": {
-      "get": {
-        "summary": "Bilingual Commodity Search (FTS5)",
-        "description": "Performs sub-5ms BM25 full-text search against official French and English commodity descriptions.",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": true,
-            "description": "Product keywords in English or French (e.g., 'lithium batteries', 'onduleur')",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer", "default": 10, "maximum": 50 }
-          }
-        ],
-        "responses": {
-          "200": { "description": "Ranked array of matching TARIC codes" }
+    "servers": [
+        {
+            "url": "https://customs.une.education",
+            "description": "Production Edge Hub"
         }
-      }
-    },
-    "/api.php?endpoint=v1/resolve": {
-      "get": {
-        "summary": "Hierarchical Tariff Code Resolution",
-        "description": "Traverses the tariff tree using an HS6 pivot or exact TARIC 10 prefix.",
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "required": true,
-            "description": "Numeric code prefix (at least 2 digits, typically 6 digits for HS6 or 10 digits for TARIC)",
-            "schema": { "type": "string", "example": "850440" }
-          }
-        ],
-        "responses": {
-          "200": { "description": "Resolved nomenclature tree" }
+    ],
+    "paths": {
+        "/api.php?endpoint=ping": {
+            "get": {
+                "summary": "Health check & Index Status",
+                "description": "Returns status, latency and total active TARIC codes.",
+                "responses": {
+                    "200": {
+                        "description": "Gateway operational"
+                    }
+                }
+            }
+        },
+        "/api.php?endpoint=v1/search": {
+            "get": {
+                "summary": "Bilingual Commodity Search (FTS5)",
+                "description": "Performs sub-5ms BM25 full-text search against official French and English commodity descriptions.",
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "description": "Product keywords in English or French (e.g., 'lithium batteries', 'onduleur')",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "maximum": 50
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ranked array of matching TARIC codes"
+                    }
+                }
+            }
+        },
+        "/api.php?endpoint=v1/resolve": {
+            "get": {
+                "summary": "Hierarchical Tariff Code Resolution",
+                "description": "Traverses the tariff tree using an HS6 pivot or exact TARIC 10 prefix.",
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "description": "Numeric code prefix (at least 2 digits, typically 6 digits for HS6 or 10 digits for TARIC)",
+                        "schema": {
+                            "type": "string",
+                            "example": "850440"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Resolved nomenclature tree"
+                    }
+                }
+            }
+        },
+        "/calculate-duties": {
+            "post": {
+                "summary": "Calculate EU customs duties and import VAT",
+                "operationId": "calculateCustomsDuties",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hs_code": {
+                                        "type": "string",
+                                        "example": "640411"
+                                    },
+                                    "customs_value_eur": {
+                                        "type": "number",
+                                        "example": 1000
+                                    },
+                                    "origin_country": {
+                                        "type": "string",
+                                        "example": "CN"
+                                    }
+                                },
+                                "required": [
+                                    "hs_code",
+                                    "customs_value_eur"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Calculated duty, VAT base, VAT amount, and total liquidation."
+                    }
+                }
+            }
         }
-      }
     }
-  }
 }
