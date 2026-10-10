@@ -117,5 +117,62 @@
                 }
             }
         }
+    },
+    "components": {
+        "schemas": {
+            "MetaEnvelope": {
+                "type": "object",
+                "description": "Cryptographic state proof and execution telemetry envelope",
+                "properties": {
+                    "state_proof": {
+                        "type": "object",
+                        "properties": {
+                            "proof_hash": {
+                                "type": "string",
+                                "description": "SHA-256 seal of the transaction payload"
+                            },
+                            "timestamp_utc": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "nonce": {
+                                "type": "string"
+                            },
+                            "corpus_version": {
+                                "type": "string"
+                            },
+                            "corpus_timestamp": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "authority": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string",
+                                "example": "SEALED"
+                            }
+                        }
+                    },
+                    "efficiency": {
+                        "type": "object",
+                        "properties": {
+                            "latency_ms": {
+                                "type": "number"
+                            },
+                            "peak_memory": {
+                                "type": "string"
+                            },
+                            "footprint_rating": {
+                                "type": "string"
+                            },
+                            "energy_est_uj": {
+                                "type": "number"
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

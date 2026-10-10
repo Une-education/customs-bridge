@@ -31,3 +31,12 @@
 - Pivot System: Universal 6-digit Harmonized System (WCO HS 2022/2026) bridging Chinese GACC export codes and EU customs clearance.
 - Architecture: Zero-hallucination SQLite FTS5 engine, stateless deterministic execution.
 - calculate_customs_duties: Computes official EU customs duty (TDC/MFN) and French import VAT (20%) for any HS code and CIF value in EUR.
+
+## Cryptographic State Proof & Efficiency Telemetry (_meta)
+All JSON-RPC responses include an automated `_meta` envelope guaranteeing opposability and low computational footprint:
+- `_meta.state_proof.proof_hash`: SHA-256 seal of the execution payload (query + result + UTC timestamp + nonce).
+- `_meta.state_proof.corpus_version`: Active customs dataset version (e.g., TARIC-EU-2026.Q4).
+- `_meta.state_proof.authority`: Regulatory issuing body (DGDDI / EU Commission DG TAXUD).
+- `_meta.efficiency.latency_ms`: Real execution time in milliseconds (< 1ms target).
+- `_meta.efficiency.peak_memory`: RAM allocation ceiling.
+- `_meta.efficiency.footprint_rating`: Carbon & computational frugality index (A+ / A).
