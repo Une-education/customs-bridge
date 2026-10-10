@@ -36,6 +36,9 @@ header('Content-Type: text/html; charset=utf-8');
     <ul>
       <li><strong>Tools Available:</strong> <span><code>search_customs_nomenclature</code>, <code>resolve_hs_code</code>, <code>calculate_customs_duties</code></span></li>
       <li><strong>Tariff Framework:</strong> <span>EU Common Customs Tariff (MFN) + French CGI Art. 292</span></li>
+      <li><strong>Cryptographic Seal:</strong> <span style="color:#10b981; font-weight:600;">SHA-256 Opposable State Proof (_meta)</span></li>
+      <li><strong>Corpus Version:</strong> <span>TARIC-EU-2026.Q4 (DGDDI / EU TAXUD)</span></li>
+      <li><strong>Carbon Efficiency:</strong> <span style="color:#10b981;">Rating A+ (Ultra-frugal, &lt;1ms)</span></li>
       <li><strong>Machine Specs:</strong> <span><a href="/openapi.json">openapi.json</a> &bull; <a href="/llms.txt">llms.txt</a></span></li>
       <li><strong>Official MCP Registry:</strong> <span>io.github.Une-education/customs-bridge</span></li>
       <li><strong>Smithery:</strong> <span><a href="https://smithery.ai/servers/ops-1k8b/customs-bridge" target="_blank">@ops-1k8b/customs-bridge</a></span></li>
