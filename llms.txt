@@ -40,3 +40,6 @@ All JSON-RPC responses include an automated `_meta` envelope guaranteeing opposa
 - `_meta.efficiency.latency_ms`: Real execution time in milliseconds (< 1ms target).
 - `_meta.efficiency.peak_memory`: RAM allocation ceiling.
 - `_meta.efficiency.footprint_rating`: Carbon & computational frugality index (A+ / A).
+- `_meta.efficiency.energy_est_mj`: Estimated execution energy in millijoules (12W TDP base, PUE 1.25).
+- `_meta.efficiency.carbon_est_mg`: Carbon emissions in mgCO2e (ADEME France grid factor: 52 gCO2e/kWh).
+- `_meta.efficiency.methodology`: Standard reference (GSF-SCI-v1 / ADEME-PUE-1.25).

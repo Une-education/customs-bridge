@@ -163,11 +163,20 @@
                             "peak_memory": {
                                 "type": "string"
                             },
+                            "energy_est_mj": {
+                                "type": "number",
+                                "description": "Estimated energy consumption in millijoules"
+                            },
+                            "carbon_est_mg": {
+                                "type": "number",
+                                "description": "Estimated carbon emissions in mgCO2e"
+                            },
                             "footprint_rating": {
                                 "type": "string"
                             },
-                            "energy_est_uj": {
-                                "type": "number"
+                            "methodology": {
+                                "type": "string",
+                                "example": "GSF-SCI-v1 / ADEME-PUE-1.25"
                             }
                         }
                     }

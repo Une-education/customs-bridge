@@ -37,11 +37,13 @@ function sendJsonRpcResponse(string|int|null $id, ?array $result, ?array $error,
             'status'           => 'SEALED'
         ],
         'efficiency' => [
-            'latency_ms'       => $execMs,
-            'peak_memory'      => $memFormatted,
-            'footprint_rating' => ($execMs < 5.0) ? 'A+ (Ultra-frugal)' : 'A (Frugal)',
-            'energy_est_uj'    => round($execMs * 0.42, 2)
-        ]
+        'latency_ms'       => $execMs,
+        'peak_memory'      => $memFormatted,
+        'energy_est_mj'    => round($execMs * 15, 3),
+        'carbon_est_mg'    => round(($execMs * 15 / 3600000) * 52 * 1000, 5),
+        'footprint_rating' => ($execMs < 5.0) ? 'A+ (Ultra-frugal)' : 'A (Frugal)',
+        'methodology'      => 'GSF-SCI-v1 / ADEME-PUE-1.25'
+    ]
     ];
 
     $response = ['jsonrpc' => '2.0'];
