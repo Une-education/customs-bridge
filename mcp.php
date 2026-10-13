@@ -34,16 +34,19 @@ function sendJsonRpcResponse(string|int|null $id, ?array $result, ?array $error,
             'corpus_version'   => 'TARIC-EU-2026.Q4',
             'corpus_timestamp' => '2026-09-27T15:18:00Z',
             'authority'        => 'DGDDI / European Commission DG TAXUD',
+            'nature'           => 'Deterministic Regulatory Snapshot & Computational State Proof',
+            'legal_basis'      => 'EU Regulation 910/2014 (eIDAS) Art. 41 & EU Customs Code Art. 22',
+            'reliance'         => 'Certified accurate computational snapshot of official gazettes at UTC timestamp. Sovereign classification remains subject to BTI/RTC procedures.',
             'status'           => 'SEALED'
         ],
         'efficiency' => [
-        'latency_ms'       => $execMs,
-        'peak_memory'      => $memFormatted,
-        'energy_est_mj'    => round($execMs * 15, 3),
-        'carbon_est_mg'    => round(($execMs * 15 / 3600000) * 52 * 1000, 5),
-        'footprint_rating' => ($execMs < 5.0) ? 'A+ (Ultra-frugal)' : 'A (Frugal)',
-        'methodology'      => 'GSF-SCI-v1 / ADEME-PUE-1.25'
-    ]
+            'latency_ms'       => $execMs,
+            'peak_memory'      => $memFormatted,
+            'energy_est_mj'    => round($execMs * 15, 3),
+            'carbon_est_mg'    => round(($execMs * 15 / 3600000) * 52 * 1000, 5),
+            'footprint_rating' => ($execMs < 5.0) ? 'A+ (Ultra-frugal)' : 'A (Frugal)',
+            'methodology'      => 'GSF-SCI-v1 / ADEME-PUE-1.25'
+        ]
     ];
 
     $response = ['jsonrpc' => '2.0'];
@@ -243,9 +246,62 @@ if ($method === 'tools/list') {
                         ]
                     ]
                 ]
-            ]
+            ],
+			[
+        'name' => 'check_import_restrictions',
+        'description' => 'Checks mandatory EU import restrictions, required document codes (CE, REACH, CBAM, CHED, CITES), and compliance directives for a given TARIC or HS code.',
+        'inputSchema' => [
+            'type' => 'object',
+            'properties' => [
+                'taric_code' => [
+                    'type' => 'string',
+                    'description' => '6-digit HS code or 10-digit TARIC code (e.g., 8504403000, 7208, 8541)'
+                ],
+                'origin_country' => [
+                    'type' => 'string',
+                    'description' => 'Two-letter ISO country code of origin (e.g., CN, US, JP). Default: CN'
+                ]
+            ],
+            'required' => ['taric_code']
+        ]
+    ],
         ]
     ], null, $t_start, $method, $rawInput);
+}
+function getImportRestrictions(PDO $db, string $taricCode, string $origin = 'CN'): array {
+    $cleanCode = preg_replace('/[^0-9]/', '', $taricCode);
+    $prefixes = [];
+    if (strlen($cleanCode) >= 6) $prefixes[] = substr($cleanCode, 0, 6);
+    if (strlen($cleanCode) >= 4) $prefixes[] = substr($cleanCode, 0, 4);
+    if (strlen($cleanCode) >= 2) $prefixes[] = substr($cleanCode, 0, 2);
+
+    $results = [];
+    if (!empty($prefixes)) {
+        $inClause = implode(',', array_fill(0, count($prefixes), '?'));
+        $stmt = $db->prepare("SELECT * FROM taric_restrictions WHERE code_prefix IN ($inClause) ORDER BY LENGTH(code_prefix) DESC");
+        $stmt->execute($prefixes);
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    $isRestricted = !empty($results);
+    $mandatoryDocs = [];
+    foreach ($results as $r) {
+        if (!empty($r['document_code'])) {
+            $mandatoryDocs[] = $r['document_code'];
+        }
+    }
+
+    return [
+        'taric_code'          => $cleanCode,
+        'origin_country'      => strtoupper($origin),
+        'compliance_status'   => $isRestricted ? 'SUBJECT_TO_RESTRICTIONS' : 'STANDARD_RELEASE',
+        'restrictions_count'  => count($results),
+        'mandatory_documents' => array_values(array_unique($mandatoryDocs)),
+        'measures'            => $results,
+        'regulatory_notice'   => $isRestricted 
+            ? 'Import clearance requires supporting certificates and document declaration at customs declaration time (SAD box 44).'
+            : 'No specific EU non-tariff import restriction found for this tariff heading. Standard commercial invoice and transport documents apply.'
+    ];
 }
 
 // 4. Appel des outils
@@ -403,6 +459,19 @@ if ($method === 'tools/call') {
                 ]
             ], null, $t_start, 'tools/call:calculate_customs_duties', $rawInput);
         }
+		if ($toolName === 'check_import_restrictions') {
+        $taricCode = $args['taric_code'] ?? '';
+        $origin = $args['origin_country'] ?? 'CN';
+        $res = getImportRestrictions($db, $taricCode, $origin);
+        sendJsonRpcResponse($id, [
+            'content' => [
+                [
+                    'type' => 'text',
+                    'text' => json_encode($res, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                ]
+            ]
+        ], null, $t_start, $method, $rawInput);
+    }
         sendJsonRpcResponse($id, null, [
             'code' => -32601,
             'message' => 'Tool non trouvé: ' . $toolName

@@ -1,5 +1,5 @@
 # AtoA Customs & Tariff Gateway - AI Agent Specification
-> Deterministic HS6/TARIC customs nomenclature resolution and duty classification engine.
+> Deterministic HS6/TARIC customs nomenclature resolution, duty classification, and regulatory compliance engine.
 
 ## Operational Gateway
 - Base URL: https://customs.une.education
@@ -7,7 +7,28 @@
 - MCP Endpoint: https://customs.une.education/mcp.php
 - Node: customs.une.education (Unified Norms Engine - Node 04)
 
-## Endpoints
+## MCP Tools Available
+
+### 1. search_customs_nomenclature
+- Full-text search (FTS5 BM25) across official EU TARIC descriptions (bilingual FR/EN).
+- Parameters:
+    - query: Commodity keyword or phrase (e.g. "lithium batteries", "panneaux solaires") (mandatory)
+    - limit: Result count (1-50, default 10)
+
+### 2. calculate_customs_duties
+- Deterministic calculation of EU Common Customs Tariff (TDC/MFN) and import VAT (20%) on CIF value.
+- Parameters:
+    - taric_code: 6-digit HS code or 10-digit TARIC code (mandatory)
+    - cif_value_eur: Customs value in EUR (cost + insurance + freight) (mandatory)
+    - origin_country: Two-letter ISO country code (default: "CN")
+
+### 3. check_import_restrictions
+- Checks mandatory EU import restrictions, non-tariff barriers, required certificates (CE, RoHS, CBAM, REACH, CHED), and official document codes for SAD declaration (Box 44).
+- Parameters:
+    - taric_code: 6-digit HS code or 10-digit TARIC code (e.g. "850440", "7208", "8541") (mandatory)
+    - origin_country: Two-letter ISO country code of origin (default: "CN")
+
+## REST Endpoints
 
 ### 1. Health & Metrics
 - GET /api.php?endpoint=ping
@@ -16,30 +37,25 @@
 ### 2. Full-Text Search (FTS5 BM25)
 - GET /api.php?endpoint=v1/search
   Sub-5ms deterministic keyword search over official French and English EU customs descriptions.
-  Parameters:
-    - q: Query string (e.g. "lithium batteries", "moteur électrique", "pales éoliennes") (mandatory)
-    - limit: Result count (1-50, default 10)
+  Parameters: `q` (mandatory), `limit` (optional, default 10).
 
 ### 3. Hierarchical Code Resolution (Pivot SH6)
 - GET /api.php?endpoint=v1/resolve
   Resolves commodity code trees between 6-digit Harmonized System (HS6 - universal China/EU pivot), 8-digit Combined Nomenclature (NC8), and 10-digit TARIC codes.
-  Parameters:
-    - code: Numeric prefix or exact code (e.g. "850440", "84129060", "28419040") (mandatory)
+  Parameters: `code` (mandatory).
 
 ## System Details
 - Coverage: Full European Union TARIC & Combined Nomenclature (25,800+ statutory nodes).
 - Pivot System: Universal 6-digit Harmonized System (WCO HS 2022/2026) bridging Chinese GACC export codes and EU customs clearance.
 - Architecture: Zero-hallucination SQLite FTS5 engine, stateless deterministic execution.
-- calculate_customs_duties: Computes official EU customs duty (TDC/MFN) and French import VAT (20%) for any HS code and CIF value in EUR.
 
-## Cryptographic State Proof & Efficiency Telemetry (_meta)
+## Cryptographic State Proof & Telemetry (_meta)
 All JSON-RPC responses include an automated `_meta` envelope guaranteeing opposability and low computational footprint:
 - `_meta.state_proof.proof_hash`: SHA-256 seal of the execution payload (query + result + UTC timestamp + nonce).
-- `_meta.state_proof.corpus_version`: Active customs dataset version (e.g., TARIC-EU-2026.Q4).
+- `_meta.state_proof.corpus_version`: Active customs dataset version (TARIC-EU-2026.Q4).
 - `_meta.state_proof.authority`: Regulatory issuing body (DGDDI / EU Commission DG TAXUD).
-- `_meta.efficiency.latency_ms`: Real execution time in milliseconds (< 1ms target).
-- `_meta.efficiency.peak_memory`: RAM allocation ceiling.
+- `_meta.state_proof.legal_basis`: EU Regulation 910/2014 (eIDAS) Art. 41 & EU Customs Code Art. 22.
+- `_meta.state_proof.reliance`: Certified accurate computational snapshot of official gazettes at UTC timestamp. Sovereign classification remains subject to BTI/RTC procedures.
+- `_meta.efficiency.latency_ms`: Real execution time in milliseconds (< 5ms target).
 - `_meta.efficiency.footprint_rating`: Carbon & computational frugality index (A+ / A).
-- `_meta.efficiency.energy_est_mj`: Estimated execution energy in millijoules (12W TDP base, PUE 1.25).
-- `_meta.efficiency.carbon_est_mg`: Carbon emissions in mgCO2e (ADEME France grid factor: 52 gCO2e/kWh).
 - `_meta.efficiency.methodology`: Standard reference (GSF-SCI-v1 / ADEME-PUE-1.25).
