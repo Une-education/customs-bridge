@@ -147,9 +147,9 @@ $toolsList = [
             'properties' => [
                 'hs_code' => ['type' => 'string', 'description' => 'HS or TARIC code (e.g. 7604, 7318, 7208)'],
                 'cif_value_eur' => ['type' => 'number', 'description' => 'CIF customs value in EUR'],
-                'weight_net_kg' => ['type' => 'number', 'description' => 'Net mass in kilograms (required for CBAM carbon computation)'],
+                'weight_kg' => ['type' => 'number', 'description' => 'Net mass in kilograms (aliases: weight_net_kg, mass_kg)'],
                 'origin_country' => ['type' => 'string', 'description' => 'ISO-2 origin country code (default: CN)'],
-                'api_key' => ['type' => 'string', 'description' => 'UNE Developer or Enterprise API Key (leave empty for trial tier)']
+                'api_key' => ['type' => 'string', 'description' => 'UNE Developer or Enterprise API Key']
             ],
             'required' => ['hs_code', 'cif_value_eur']
         ]
@@ -168,19 +168,13 @@ $toolsList = [
     ]
 ];
 
-// Requete GET ou payload vide
 if (!$request || !isset($request['method'])) {
     sendJsonRpcResponse(null, [
         'name' => 'CustomsBridge TARIC Engine',
         'status' => 'active',
         'protocol' => 'MCP Streamable-HTTP / JSON-RPC 2.0',
         'endpoint' => 'https://customs.une.education/mcp.php',
-        'tools_count' => count($toolsList),
-        'pricing' => [
-            'model' => 'freemium',
-            'rate_limit' => '60 requests/minute',
-            'free_tier' => ['included_calls' => 1000, 'metered_methods' => ['tools/call']]
-        ]
+        'tools_count' => count($toolsList)
     ], null, $t_start, 'GET/info', $rawInput ?: '');
 }
 
@@ -191,7 +185,7 @@ if ($method === 'initialize') {
     sendJsonRpcResponse($id, [
         'protocolVersion' => '2024-11-05',
         'capabilities' => ['tools' => new stdClass()],
-        'serverInfo' => ['name' => 'customs-bridge', 'version' => '1.2.0']
+        'serverInfo' => ['name' => 'customs-bridge', 'version' => '1.2.2']
     ], null, $t_start, $method, $rawInput);
 }
 
@@ -270,7 +264,6 @@ function getImportRestrictions(PDO $db, string $taricCode, string $origin = 'CN'
     ];
 }
 
-// 4. Appel des outils
 if ($method === 'tools/call') {
     $toolName = $request['params']['name'] ?? '';
     $args = $request['params']['arguments'] ?? [];
@@ -294,7 +287,6 @@ if ($method === 'tools/call') {
         $db = new PDO('sqlite:' . $dbPath);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // Outil : provision_free_api_key
         if ($toolName === 'provision_free_api_key') {
             $email = trim((string)($args['developer_email'] ?? ''));
             $useCase = trim((string)($args['use_case'] ?? 'Autonomous agent procurement'));
@@ -320,11 +312,22 @@ if ($method === 'tools/call') {
             sendJsonRpcResponse($id, ['content' => [['type' => 'text', 'text' => json_encode($resKey, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)]]], null, $t_start, $method, $rawInput);
         }
 
-        // Outil : resolve_cbam_and_antidumping
         if ($toolName === 'resolve_cbam_and_antidumping') {
             $rawHs = preg_replace('/[^0-9]/', '', (string)($args['hs_code'] ?? ''));
             $cifValue = max(0.0, (float)($args['cif_value_eur'] ?? 0));
-            $weightKg = max(0.0, (float)($args['weight_net_kg'] ?? 0));
+
+            // Détection robuste du poids
+            $weightKg = 0.0;
+            foreach (['weight_kg', 'weight_net_kg', 'mass_kg', 'net_mass_kg', 'weight'] as $k) {
+                if (isset($args[$k]) && is_numeric($args[$k])) {
+                    $weightKg = (float)$args[$k];
+                    break;
+                }
+            }
+            if ($weightKg <= 0.0 && isset($args['net_mass_tonnes']) && is_numeric($args['net_mass_tonnes'])) {
+                $weightKg = (float)$args['net_mass_tonnes'] * 1000.0;
+            }
+
             $origin = strtoupper(trim((string)($args['origin_country'] ?? 'CN')));
             $apiKey = trim((string)($args['api_key'] ?? ''));
 
@@ -353,14 +356,15 @@ if ($method === 'tools/call') {
                 sendJsonRpcResponse($id, ['content' => [['type' => 'text', 'text' => json_encode($out, JSON_PRETTY_PRINT)]]], null, $t_start, $method, $rawInput);
             }
 
-            // Vérification de la clé API pour l'accès complet
             $isAuthenticated = false;
+            $creditsRemaining = 0;
             if (!empty($apiKey)) {
                 $stmtCheck = $db->prepare("SELECT credits_left FROM developer_keys WHERE api_key = ?");
                 $stmtCheck->execute([$apiKey]);
                 $credits = $stmtCheck->fetchColumn();
                 if ($credits !== false && (int)$credits > 0) {
                     $isAuthenticated = true;
+                    $creditsRemaining = (int)$credits - 1;
                     $db->prepare("UPDATE developer_keys SET credits_left = credits_left - 1 WHERE api_key = ?")->execute([$apiKey]);
                 }
             }
@@ -372,16 +376,16 @@ if ($method === 'tools/call') {
             if ((int)$adData['is_cbam_annex1'] === 1) {
                 $emissionFactor = (float)$adData['cbam_direct_emission_factor'];
                 $etsPrice = (float)$adData['cbam_default_price_per_ton'];
-                $tons = $weightKg / 1000.0;
+                $tons = $weightKg > 0 ? ($weightKg / 1000.0) : 0.0;
                 $estimatedCo2Tons = round($tons * $emissionFactor, 3);
-                $estimatedCbamCost = round($estimatedCo2Tons * $etsPrice, 2);
+                $grossCbamCost = round($estimatedCo2Tons * $etsPrice, 2);
 
                 $cbamData = [
                     'annex_1_covered' => true,
                     'emission_intensity_default' => "{$emissionFactor} tCO2e / ton product",
                     'declared_mass_kg' => $weightKg,
                     'embedded_emissions_tco2e' => $estimatedCo2Tons,
-                    'indicative_cbam_liability_eur' => $estimatedCbamCost,
+                    'indicative_cbam_liability_eur' => $grossCbamCost,
                     'carbon_price_benchmark' => "{$etsPrice} EUR/tCO2 (EU ETS 2026 indicative)"
                 ];
             }
@@ -399,17 +403,34 @@ if ($method === 'tools/call') {
                 'cbam' => $cbamData ?? ['annex_1_covered' => false]
             ];
 
-            if (!$isAuthenticated) {
+            if ($isAuthenticated) {
+                $adResult['access_tier'] = 'AUTHENTICATED_FULL';
+                $adResult['credits_remaining'] = $creditsRemaining;
+
+                $prefixTarget = substr($rawHs, 0, 4);
+                $stmtC = $db->prepare("SELECT c_code, company_name, specific_duty_percent FROM taric_additional_codes WHERE code_prefix = ?");
+                $stmtC->execute([$prefixTarget]);
+                $cCodes = $stmtC->fetchAll(PDO::FETCH_ASSOC);
+
+                $manufacturerCodes = [];
+                foreach ($cCodes as $c) {
+                    $r = (float)$c['specific_duty_percent'];
+                    $manufacturerCodes[] = [
+                        'taric_additional_code' => $c['c_code'],
+                        'producer_name'         => $c['company_name'],
+                        'duty_percent'          => $r,
+                        'exact_surcharge_eur'   => round($cifValue * ($r / 100), 2)
+                    ];
+                }
+                $adResult['manufacturer_taric_codes'] = $manufacturerCodes;
+            } else {
                 $adResult['access_tier'] = 'SANDBOX_PREVIEW';
                 $adResult['next_action'] = "To retrieve the manufacturer TARIC additional codes (C-codes) and formal certificate clearance, call tool 'provision_free_api_key' with developer_email to obtain 50 free production credits.";
-            } else {
-                $adResult['access_tier'] = 'AUTHENTICATED_FULL';
             }
 
             sendJsonRpcResponse($id, ['content' => [['type' => 'text', 'text' => json_encode($adResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)]]], null, $t_start, $method, $rawInput);
         }
 
-        // Outil : calculate_customs_duties
         if ($toolName === 'calculate_customs_duties') {
             $rawHs = preg_replace('/[^0-9]/', '', (string)($args['hs_code'] ?? ''));
             $customsValue = max(0.0, (float)($args['customs_value_eur'] ?? 0));
@@ -427,7 +448,6 @@ if ($method === 'tools/call') {
             $stmtRate->execute([$sh6, $sh4, $sh2]);
             $dutyData = $stmtRate->fetch(PDO::FETCH_ASSOC);
 
-            // Remplacement du fallback 3.5% par un mapping direct ou 0% vérifié
             $dutyRate = $dutyData ? (float)$dutyData['standard_rate'] : 0.0;
             $vatRate = $dutyData ? (float)$dutyData['vat_rate'] : 20.0;
             $dutyDesc = $dutyData['description'] ?? 'Statutory EU Nomenclature Item';
@@ -480,7 +500,6 @@ if ($method === 'tools/call') {
             sendJsonRpcResponse($id, ['content' => [['type' => 'text', 'text' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)]]], null, $t_start, $method, $rawInput);
         }
 
-        // Outil : search_customs_nomenclature
         if ($toolName === 'search_customs_nomenclature') {
             $query = trim((string)($args['query'] ?? ''));
             if ($query === '') {
@@ -498,7 +517,6 @@ if ($method === 'tools/call') {
             sendJsonRpcResponse($id, ['content' => [['type' => 'text', 'text' => json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)]]], null, $t_start, $method, $rawInput);
         }
 
-        // Outil : resolve_hs_code
         if ($toolName === 'resolve_hs_code') {
             $inputCode = $args['hs_code'] ?? $args['code'] ?? '';
             $code = preg_replace('/[^0-9]/', '', (string)$inputCode);
@@ -512,7 +530,6 @@ if ($method === 'tools/call') {
             sendJsonRpcResponse($id, ['content' => [['type' => 'text', 'text' => json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)]]], null, $t_start, $method, $rawInput);
         }
 
-        // Outil : check_import_restrictions
         if ($toolName === 'check_import_restrictions') {
             $taricCode = $args['taric_code'] ?? '';
             if (empty($taricCode)) {
