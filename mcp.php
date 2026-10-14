@@ -15,7 +15,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $rawInput = file_get_contents('php://input');
 $request = json_decode($rawInput, true);
 
-// Réponse JSON-RPC + logging dans data/customs.db
 function sendJsonRpcResponse(string|int|null $id, ?array $result, ?array $error, float $t_start, ?string $method, string $rawInput): void {
     $execMs = round((microtime(true) - $t_start) * 1000, 2);
     $memBytes = memory_get_peak_usage(true);
@@ -99,155 +98,72 @@ function sendJsonRpcResponse(string|int|null $id, ?array $result, ?array $error,
     exit;
 }
 
-// Requête GET ou payload vide
-if (!$request || !isset($request['method'])) {
-    sendJsonRpcResponse(null, [
-        'name' => 'CustomsBridge TARIC Engine',
-        'status' => 'active',
-        'protocol' => 'MCP Streamable-HTTP / JSON-RPC 2.0',
-        'endpoint' => 'https://customs.une.education/mcp.php',
-        'pricing' => [
-            'model' => 'freemium',
-            'rate_limit' => '60 requests/minute',
-            'free_tier' => [
-                'included_calls' => 1000,
-                'metered_methods' => ['tools/call']
-            ],
-            'plans' => [
-                [
-                    'id' => 'dev_50k',
-                    'name' => 'Developer Access Pack',
-                    'credits' => 50000,
-                    'price_eur' => 29.00,
-                    'checkout_url' => 'https://legal.une.education/checkout.php?pack=dev_50k'
+$toolsList = [
+    [
+        'name' => 'calculate_customs_duties',
+        'description' => 'Calculates official EU customs duties (Common Customs Tariff / MFN) and import VAT for a given HS code and CIF customs value in EUR.',
+        'inputSchema' => [
+            'type' => 'object',
+            'properties' => [
+                'hs_code' => [
+                    'type' => 'string',
+                    'description' => 'HS code or TARIC code (2, 4, 6 or 10 digits, e.g. 640411 or 6404110000)'
                 ],
-                [
-                    'id' => 'pro_200k',
-                    'name' => 'Enterprise Access Pack',
-                    'credits' => 200000,
-                    'price_eur' => 89.00,
-                    'checkout_url' => 'https://legal.une.education/checkout.php?pack=pro_200k'
+                'customs_value_eur' => [
+                    'type' => 'number',
+                    'description' => 'Customs CIF value in EUR (cost + insurance + freight to EU border)'
+                ],
+                'origin_country' => [
+                    'type' => 'string',
+                    'description' => 'ISO-2 country code of export/origin (e.g. CN, US, VN). Default: third country (MFN rate)'
+                ]
+            ],
+            'required' => ['hs_code', 'customs_value_eur']
+        ]
+    ],
+    [
+        'name' => 'search_customs_nomenclature',
+        'description' => 'Recherche textuelle bilingue (FR/EN) dans la nomenclature combinee de l Union Europeenne (codes SH6/TARIC) via indexation FTS5.',
+        'inputSchema' => [
+            'type' => 'object',
+            'properties' => [
+                'query' => [
+                    'type' => 'string',
+                    'description' => 'Terme de recherche en francais ou anglais (ex: photovoltaic, cafe, aluminium, lithium)'
+                ],
+                'lang' => [
+                    'type' => 'string',
+                    'enum' => ['fr', 'en'],
+                    'default' => 'fr',
+                    'description' => 'Langue de recherche'
+                ],
+                'limit' => [
+                    'type' => 'integer',
+                    'default' => 5,
+                    'description' => 'Nombre maximal de resultats'
+                ]
+            ],
+            'required' => ['query']
+        ]
+    ],
+    [
+        'name' => 'resolve_hs_code',
+        'description' => 'Resout l arborescence hierarchique et la designation officielle d un code SH6 ou TARIC (de 2 a 10 chiffres).',
+        'inputSchema' => [
+            'type' => 'object',
+            'properties' => [
+                'hs_code' => [
+                    'type' => 'string',
+                    'description' => 'Code SH (6 chiffres) ou TARIC (10 chiffres) a analyser (ex: 854143, 8501710000)'
+                ],
+                'code' => [
+                    'type' => 'string',
+                    'description' => 'Alias pour hs_code'
                 ]
             ]
         ]
-    ], null, $t_start, 'GET/info', $rawInput ?: '');
-}
-
-$id = $request['id'] ?? null;
-$method = $request['method'];
-
-// 1. Initialisation MCP
-if ($method === 'initialize') {
-    sendJsonRpcResponse($id, [
-        'protocolVersion' => '2024-11-05',
-        'capabilities' => [
-            'tools' => [
-            [
-                'name' => 'calculate_customs_duties',
-                'description' => 'Calculates official EU customs duties (Common Customs Tariff / MFN) and import VAT for a given HS code and CIF customs value in EUR.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'hs_code' => [
-                            'type' => 'string',
-                            'description' => 'HS code or TARIC code (2, 4, 6 or 10 digits, e.g. 640411 or 6404110000)'
-                        ],
-                        'customs_value_eur' => [
-                            'type' => 'number',
-                            'description' => 'Customs CIF value in EUR (cost + insurance + freight to EU border)'
-                        ],
-                        'origin_country' => [
-                            'type' => 'string',
-                            'description' => 'ISO-2 country code of export/origin (e.g. CN, US, VN). Default: third country (MFN rate)'
-                        ]
-                    ],
-                    'required' => ['hs_code', 'customs_value_eur']
-                ]
-            ],
-                'listChanged' => false
-            ]
-        ],
-        'serverInfo' => [
-            'name' => 'customs-bridge',
-            'version' => '1.0.0'
-        ]
-    ], null, $t_start, $method, $rawInput);
-}
-
-// 2. Notifications MCP
-if ($method === 'notifications/initialized') {
-    exit;
-}
-
-// 3. Liste des outils
-if ($method === 'tools/list') {
-    sendJsonRpcResponse($id, [
-        'tools' => [
-            [
-                'name' => 'calculate_customs_duties',
-                'description' => 'Calculates official EU customs duties (Common Customs Tariff / MFN) and import VAT for a given HS code and CIF customs value in EUR.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'hs_code' => [
-                            'type' => 'string',
-                            'description' => 'HS code or TARIC code (2, 4, 6 or 10 digits, e.g. 640411 or 6404110000)'
-                        ],
-                        'customs_value_eur' => [
-                            'type' => 'number',
-                            'description' => 'Customs CIF value in EUR (cost + insurance + freight to EU border)'
-                        ],
-                        'origin_country' => [
-                            'type' => 'string',
-                            'description' => 'ISO-2 country code of export/origin (e.g. CN, US, VN). Default: third country (MFN rate)'
-                        ]
-                    ],
-                    'required' => ['hs_code', 'customs_value_eur']
-                ]
-            ],
-            [
-                'name' => 'search_customs_nomenclature',
-                'description' => 'Recherche textuelle bilingue (FR/EN) dans la nomenclature combinée de l\'Union Européenne (codes SH6/TARIC) via indexation FTS5.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'query' => [
-                            'type' => 'string',
-                            'description' => 'Terme de recherche en français ou anglais (ex: "photovoltaic", "café", "aluminium", "lithium")'
-                        ],
-                        'lang' => [
-                            'type' => 'string',
-                            'enum' => ['fr', 'en'],
-                            'default' => 'fr',
-                            'description' => 'Langue de recherche'
-                        ],
-                        'limit' => [
-                            'type' => 'integer',
-                            'default' => 5,
-                            'description' => 'Nombre maximal de résultats'
-                        ]
-                    ],
-                    'required' => ['query']
-                ]
-            ],
-            [
-                'name' => 'resolve_hs_code',
-                'description' => 'Résout l\'arborescence hiérarchique et la désignation officielle d\'un code SH6 ou TARIC (de 2 à 10 chiffres).',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'hs_code' => [
-                            'type' => 'string',
-                            'description' => 'Code SH (6 chiffres) ou TARIC (10 chiffres) à analyser (ex: "854143", "8501710000")'
-                        ],
-                        'code' => [
-                            'type' => 'string',
-                            'description' => 'Alias pour hs_code'
-                        ]
-                    ]
-                ]
-            ],
-			[
+    ],
+    [
         'name' => 'check_import_restrictions',
         'description' => 'Checks mandatory EU import restrictions, required document codes (CE, REACH, CBAM, CHED, CITES), and compliance directives for a given TARIC or HS code.',
         'inputSchema' => [
@@ -264,10 +180,58 @@ if ($method === 'tools/list') {
             ],
             'required' => ['taric_code']
         ]
-    ],
+    ]
+];
+
+// Requete GET ou payload vide
+if (!$request || !isset($request['method'])) {
+    sendJsonRpcResponse(null, [
+        'name' => 'CustomsBridge TARIC Engine',
+        'status' => 'active',
+        'protocol' => 'MCP Streamable-HTTP / JSON-RPC 2.0',
+        'endpoint' => 'https://customs.une.education/mcp.php',
+        'tools_count' => count($toolsList),
+        'pricing' => [
+            'model' => 'freemium',
+            'rate_limit' => '60 requests/minute',
+            'free_tier' => [
+                'included_calls' => 1000,
+                'metered_methods' => ['tools/call']
+            ]
+        ]
+    ], null, $t_start, 'GET/info', $rawInput ?: '');
+}
+
+$id = $request['id'] ?? null;
+$method = (string)($request['method'] ?? '');
+
+// 1. Initialisation MCP (Glama handshake)
+if ($method === 'initialize') {
+    sendJsonRpcResponse($id, [
+        'protocolVersion' => '2024-11-05',
+        'capabilities' => [
+            'tools' => new stdClass()
+        ],
+        'serverInfo' => [
+            'name' => 'customs-bridge',
+            'version' => '1.1.0'
         ]
     ], null, $t_start, $method, $rawInput);
 }
+
+// 2. Notifications MCP
+if ($method === 'notifications/initialized' || ($id === null && str_starts_with($method, 'notifications/'))) {
+    http_response_code(204);
+    exit;
+}
+
+// 3. Liste des outils
+if ($method === 'tools/list') {
+    sendJsonRpcResponse($id, [
+        'tools' => $toolsList
+    ], null, $t_start, $method, $rawInput);
+}
+
 function getImportRestrictions(PDO $db, string $taricCode, string $origin = 'CN'): array {
     $cleanCode = preg_replace('/[^0-9]/', '', $taricCode);
     $prefixes = [];
@@ -309,6 +273,15 @@ if ($method === 'tools/call') {
     $toolName = $request['params']['name'] ?? '';
     $args = $request['params']['arguments'] ?? [];
 
+    $validTools = ['calculate_customs_duties', 'search_customs_nomenclature', 'resolve_hs_code', 'check_import_restrictions'];
+
+    if (!in_array($toolName, $validTools, true)) {
+        sendJsonRpcResponse($id, null, [
+            'code' => -32601,
+            'message' => "Tool not found: $toolName"
+        ], $t_start, $method, $rawInput);
+    }
+
     $dbPath = __DIR__ . '/taric.sqlite';
 
     try {
@@ -316,13 +289,19 @@ if ($method === 'tools/call') {
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         if ($toolName === 'search_customs_nomenclature') {
-            $query = trim($args['query'] ?? '');
-            $lang = ($args['lang'] ?? 'fr') === 'en' ? 'en' : 'fr';
-            $limit = min((int)($args['limit'] ?? 5), 20);
+            $query = trim((string)($args['query'] ?? ''));
 
+            if ($query === '') {
+                sendJsonRpcResponse($id, null, [
+                    'code' => -32602,
+                    'message' => 'Invalid params: "query" parameter is required'
+                ], $t_start, $method, $rawInput);
+            }
+
+            $lang = (($args['lang'] ?? 'fr') === 'en') ? 'en' : 'fr';
+            $limit = min(max((int)($args['limit'] ?? 5), 1), 20);
             $ftsCol = ($lang === 'en') ? 'desc_en' : 'desc_fr';
-            
-            // Requête FTS5 sur goods_fts joint à goods_nomenclature
+
             $sql = "SELECT n.code_taric, n.sh6, n.chapter, n.hier_pos, n.indent, n.desc_fr, n.desc_en 
                     FROM goods_fts f
                     JOIN goods_nomenclature n ON n.rowid = f.rowid
@@ -345,11 +324,11 @@ if ($method === 'tools/call') {
         if ($toolName === 'resolve_hs_code') {
             $inputCode = $args['hs_code'] ?? $args['code'] ?? '';
             $code = preg_replace('/[^0-9]/', '', (string)$inputCode);
-            
+
             if (empty($code)) {
                 sendJsonRpcResponse($id, null, [
                     'code' => -32602,
-                    'message' => 'Paramètre code ou hs_code manquant ou invalide'
+                    'message' => 'Invalid params: "hs_code" or "code" parameter is required'
                 ], $t_start, $method, $rawInput);
             }
 
@@ -371,7 +350,7 @@ if ($method === 'tools/call') {
             ], null, $t_start, $method, $rawInput);
         }
 
-                if ($toolName === 'calculate_customs_duties') {
+        if ($toolName === 'calculate_customs_duties') {
             $rawHs = preg_replace('/[^0-9]/', '', (string)($args['hs_code'] ?? ''));
             $customsValue = max(0.0, (float)($args['customs_value_eur'] ?? 0));
             $origin = strtoupper(trim((string)($args['origin_country'] ?? 'THIRD_COUNTRY')));
@@ -379,11 +358,10 @@ if ($method === 'tools/call') {
             if (empty($rawHs) || $customsValue <= 0) {
                 sendJsonRpcResponse($id, null, [
                     'code' => -32602,
-                    'message' => 'Invalid parameters: hs_code and positive customs_value_eur are required'
-                ], $t_start, 'tools/call:calculate_customs_duties', $rawInput);
+                    'message' => 'Invalid params: "hs_code" and positive "customs_value_eur" are required'
+                ], $t_start, $method, $rawInput);
             }
 
-            // Recherche du taux le plus spécifique (SH6 -> SH4 -> SH2)
             $sh6 = substr($rawHs, 0, 6);
             $sh4 = substr($rawHs, 0, 4);
             $sh2 = substr($rawHs, 0, 2);
@@ -398,13 +376,11 @@ if ($method === 'tools/call') {
             $stmtRate->execute([$sh6, $sh4, $sh2]);
             $dutyData = $stmtRate->fetch(PDO::FETCH_ASSOC);
 
-            // Taux par défaut si non répertorié dans les tables spécifiques
             $dutyRate = $dutyData ? (float)$dutyData['standard_rate'] : 3.5;
             $vatRate = $dutyData ? (float)$dutyData['vat_rate'] : 20.0;
             $dutyDesc = $dutyData['description'] ?? 'General commercial goods';
             $legalBasis = $dutyData['legal_basis'] ?? 'EU Common Customs Tariff standard average';
 
-            // Recherche du libellé officiel dans la nomenclature si présent
             $stmtNom = $db->prepare("
                 SELECT desc_fr, desc_en, code_taric
                 FROM goods_nomenclature
@@ -415,7 +391,6 @@ if ($method === 'tools/call') {
             $stmtNom->execute([substr($rawHs, 0, min(strlen($rawHs), 10)) . '%']);
             $nomData = $stmtNom->fetch(PDO::FETCH_ASSOC);
 
-            // Calculs liquidatifs
             $dutyAmount = round($customsValue * ($dutyRate / 100), 2);
             $vatBase = round($customsValue + $dutyAmount, 2);
             $vatAmount = round($vatBase * ($vatRate / 100), 2);
@@ -444,8 +419,8 @@ if ($method === 'tools/call') {
                 ],
                 'liquidation_summary' => [
                     'total_customs_duties' => $dutyAmount,
-                    'total_import_vat' => $vatAmount,
                     'total_import_taxes' => $totalPayable,
+                    'total_import_vat' => $vatAmount,
                     'effective_burden_rate_percent' => $effectiveTaxRate
                 ]
             ];
@@ -457,36 +432,40 @@ if ($method === 'tools/call') {
                         'text' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
                     ]
                 ]
-            ], null, $t_start, 'tools/call:calculate_customs_duties', $rawInput);
+            ], null, $t_start, $method, $rawInput);
         }
-		if ($toolName === 'check_import_restrictions') {
-        $taricCode = $args['taric_code'] ?? '';
-        $origin = $args['origin_country'] ?? 'CN';
-        $res = getImportRestrictions($db, $taricCode, $origin);
-        sendJsonRpcResponse($id, [
-            'content' => [
-                [
-                    'type' => 'text',
-                    'text' => json_encode($res, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+
+        if ($toolName === 'check_import_restrictions') {
+            $taricCode = $args['taric_code'] ?? '';
+
+            if (empty($taricCode)) {
+                sendJsonRpcResponse($id, null, [
+                    'code' => -32602,
+                    'message' => 'Invalid params: "taric_code" parameter is required'
+                ], $t_start, $method, $rawInput);
+            }
+
+            $origin = $args['origin_country'] ?? 'CN';
+            $res = getImportRestrictions($db, $taricCode, $origin);
+            sendJsonRpcResponse($id, [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => json_encode($res, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    ]
                 ]
-            ]
-        ], null, $t_start, $method, $rawInput);
-    }
-        sendJsonRpcResponse($id, null, [
-            'code' => -32601,
-            'message' => 'Tool non trouvé: ' . $toolName
-        ], $t_start, $method, $rawInput);
+            ], null, $t_start, $method, $rawInput);
+        }
 
     } catch (\Throwable $e) {
         sendJsonRpcResponse($id, null, [
             'code' => -32603,
-            'message' => 'Erreur base de données: ' . $e->getMessage()
+            'message' => 'Internal database error: ' . $e->getMessage()
         ], $t_start, $method, $rawInput);
     }
 }
 
-// Méthode inconnue
 sendJsonRpcResponse($id, null, [
     'code' => -32601,
-    'message' => 'Méthode JSON-RPC non supportée: ' . htmlspecialchars((string)$method)
+    'message' => 'Unsupported JSON-RPC method: ' . htmlspecialchars($method)
 ], $t_start, $method, $rawInput);
