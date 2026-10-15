@@ -185,7 +185,7 @@ if ($method === 'initialize') {
     sendJsonRpcResponse($id, [
         'protocolVersion' => '2024-11-05',
         'capabilities' => ['tools' => new stdClass()],
-        'serverInfo' => ['name' => 'customs-bridge', 'version' => '1.2.2']
+        'serverInfo' => ['name' => 'customs-bridge', 'version' => '1.2.3']
     ], null, $t_start, $method, $rawInput);
 }
 
@@ -196,6 +196,35 @@ if ($method === 'notifications/initialized' || ($id === null && str_starts_with(
 
 if ($method === 'tools/list') {
     sendJsonRpcResponse($id, ['tools' => $toolsList], null, $t_start, $method, $rawInput);
+}
+
+function getEuLegalCitation(string $query): ?array {
+    $euDbPath = __DIR__ . '/europe.sqlite';
+    if (!file_exists($euDbPath)) {
+        return null;
+    }
+    try {
+        $euDb = new PDO('sqlite:' . $euDbPath);
+        $euDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+        $stmt = $euDb->prepare("
+            SELECT act_code, article_num, title, substr(text_en, 1, 350) as excerpt_en 
+            FROM eu_fts 
+            WHERE eu_fts MATCH ? 
+            ORDER BY rank 
+            LIMIT 1
+        ");
+        $stmt->execute([$query]);
+        $hit = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($hit) {
+            return [
+                'act'     => $hit['act_code'],
+                'article' => $hit['article_num'],
+                'title'   => $hit['title'],
+                'excerpt' => trim($hit['excerpt_en']) . '...'
+            ];
+        }
+    } catch (\Throwable $ignored) {}
+    return null;
 }
 
 function getCriticalRisks(PDO $db, string $rawHs, string $origin = 'CN'): ?array {
@@ -316,7 +345,6 @@ if ($method === 'tools/call') {
             $rawHs = preg_replace('/[^0-9]/', '', (string)($args['hs_code'] ?? ''));
             $cifValue = max(0.0, (float)($args['cif_value_eur'] ?? 0));
 
-            // Détection robuste du poids
             $weightKg = 0.0;
             foreach (['weight_kg', 'weight_net_kg', 'mass_kg', 'net_mass_kg', 'weight'] as $k) {
                 if (isset($args[$k]) && is_numeric($args[$k])) {
@@ -423,6 +451,12 @@ if ($method === 'tools/call') {
                     ];
                 }
                 $adResult['manufacturer_taric_codes'] = $manufacturerCodes;
+
+                // Enrichissement en direct via europe.sqlite (eu_fts)
+              $euCitation = getEuLegalCitation('DUAL_USE_2021_821') ?? getEuLegalCitation('customs');
+                if ($euCitation) {
+                    $adResult['statutory_eu_framework'] = $euCitation;
+                }
             } else {
                 $adResult['access_tier'] = 'SANDBOX_PREVIEW';
                 $adResult['next_action'] = "To retrieve the manufacturer TARIC additional codes (C-codes) and formal certificate clearance, call tool 'provision_free_api_key' with developer_email to obtain 50 free production credits.";
